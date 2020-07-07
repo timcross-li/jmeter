@@ -17,10 +17,7 @@
 
 package org.apache.jmeter.visualizers;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.GridLayout;
+import java.awt.*;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -28,23 +25,10 @@ import java.util.LinkedHashMap;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import javax.swing.BorderFactory;
-import javax.swing.Icon;
-import javax.swing.ImageIcon;
-import javax.swing.JEditorPane;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
-import javax.swing.JTabbedPane;
-import javax.swing.JTable;
-import javax.swing.JTextPane;
-import javax.swing.SwingConstants;
+import javax.swing.*;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.text.BadLocationException;
-import javax.swing.text.DefaultStyledDocument;
-import javax.swing.text.Document;
 import javax.swing.text.Style;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -62,8 +46,11 @@ import org.apache.jorphan.gui.GuiUtils;
 import org.apache.jorphan.gui.ObjectTableModel;
 import org.apache.jorphan.gui.RendererUtils;
 import org.apache.jorphan.reflect.Functor;
+import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Right side in View Results Tree
@@ -103,6 +90,7 @@ public abstract class SamplerResultTab implements ResultRenderer {
 
     private JSyntaxTextArea headerData;
     /** Response Data shown here */
+    private JSyntaxTextArea resultData;
     protected JEditorPane results;
 
     private JLabel imageLabel;
@@ -573,7 +561,20 @@ public abstract class SamplerResultTab implements ResultRenderer {
         headersAndSearchPanel.add(new JSyntaxSearchToolBar(headerData).getToolBar(), BorderLayout.NORTH);
         headersAndSearchPanel.add(JTextScrollPane.getInstance(headerData), BorderLayout.CENTER);
 
-        resultsScrollPane = GuiUtils.makeScrollPane(results);
+        try {
+            JSyntaxTextArea jSyntaxTextArea = JSyntaxTextArea.getInstance(15, 80, true);
+            jSyntaxTextArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_NONE);
+            jSyntaxTextArea.setCodeFoldingEnabled(false);
+            jSyntaxTextArea.setAntiAliasingEnabled(false);
+            jSyntaxTextArea.setEditable(false);
+            jSyntaxTextArea.setLineWrap(false);
+            jSyntaxTextArea.setLanguage("text");
+            jSyntaxTextArea.setMargin(new Insets(2, 2, 2, 2)); // space between borders and text
+            resultsScrollPane = JTextScrollPane.getInstance(jSyntaxTextArea);
+            resultData = jSyntaxTextArea;
+
+        } catch (Exception e) {
+        }
         imageLabel = new JLabel();
 
         JPanel resultAndSearchPanel = new JPanel(new BorderLayout());
@@ -684,14 +685,33 @@ public abstract class SamplerResultTab implements ResultRenderer {
      * @param data String data
      */
     protected void setTextOptimized(String data) {
-        Document document = results.getDocument();
-        Document blank = new DefaultStyledDocument();
-        results.setDocument(blank);
-        try {
-            document.insertString(0, data == null ? "" : data, null);
-        } catch (BadLocationException ex) {
-            LOGGER.error("Error inserting text", ex);
+        if (data == null) {
+            data = "";
         }
-        results.setDocument(document);
+        if ((data.startsWith("{") && data.endsWith("}")) || (data.startsWith("[") && data.endsWith("]"))) {
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                String formatJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(mapper.readValue(data, Object.class));
+                resultData.setInitialText(formatJson.replaceAll("\\\\r\\\\n", "\n")
+                        .replaceAll("\\\\t", "\t"));
+                resultData.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JSON);
+                resultData.setCodeFoldingEnabled(true);
+                resultData.moveCaretPosition(0);
+                resultData.setLocation(0, 0);
+                resultData.modelToView(0);
+                resultData.setCaretPosition(0);
+                return;
+            } catch (Exception e) {
+                System.out.println(e.getStackTrace());
+            }
+        }
+        try {
+            resultData.setInitialText(data);
+            resultData.moveCaretPosition(0);
+            resultData.setLocation(0, 0);
+            resultData.modelToView(0);
+        } catch (Exception e) {
+            System.out.println(e.getStackTrace());
+        }
     }
 }
